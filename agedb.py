@@ -15,7 +15,7 @@ import random
 
 
 class AgeDB(data.Dataset):
-    def __init__(self, df, data_dir, img_size, split='train', group_num=10, reweight='inv', smooth = 'none', max_age=100, aug=False):
+    def __init__(self, df, data_dir, img_size, train_shot_dict, split='train', group_num=10, reweight='inv', smooth = 'none', max_age=100, aug=False):
         self.df = df
         self.data_dir = data_dir
         self.img_size = img_size
@@ -27,7 +27,7 @@ class AgeDB(data.Dataset):
         #
         self.split = split
         #
-        self.y_min, self.y_max = np.max(df['age']), np.min(np.max(df['age']))
+        self.y_min, self.y_max = np.min(df['age']), np.max(df['age'])
         #
         self.reweight, self.smooth = reweight, smooth
         #
@@ -44,15 +44,11 @@ class AgeDB(data.Dataset):
         #
         # first reweight then judge if use LDS
         #
-
-           
+        self.train_shot_dict = train_shot_dict
 
     def __len__(self):
         return len(self.df)
     
-
-
-
     # add to test the multi expert
     def __getitem__(self, index):
         index = index % len(self.df)
@@ -62,13 +58,14 @@ class AgeDB(data.Dataset):
         transform = self.get_transform()
 
         imgs = transform(img)
+        age = int(row['age'])
 
-        label = np.asarray([row['age']]).astype('float32')
-
+        label = np.asarray([age]).astype('float32')
+        age_class = np.int64(self.train_shot_dict[age])
         #if self.split == 'train' and self.reweight != 'none':
         weight = np.asarray([self.weights[index]]).astype('float32') if self.weights is not None else np.asarray([np.float32(1.)])
-        #
-        return imgs, label, weight
+        
+        return imgs, label, weight, age_class
         #    return imgs, label, weight
         #else:
         #    return imgs, label, 1
@@ -175,42 +172,65 @@ class AgeDB(data.Dataset):
         #print(f"--{self.split}---{reweight}-----{lds}-----")
         #
         return weights
-    
-    #
-    # return a dictionary, key is the label and value is the shot index, 0 : many, 1: median, 2: low
-    def get_shots(self):
-        df = self.df
-        train_class_count, test_class_count, per_shot_count = [], [],  {}
-        #print(f'the len of the unique is {len(np.unique(train_labels))}')
-        labels = df['age']
-        for l in np.unique(train_labels):
-            train_class_count.append(len(
-                train_labels[train_labels == l]))
-            test_class_count.append(len(
-                labels[labels == l]))
+
+def get_shots_by_count(train_labels):
+    train_class_count, test_class_count, per_shot_count = [], [],  {}
+    #print(f'the len of the unique is {len(np.unique(train_labels))}')
+    #labels = df['age']
+    unique_labels = np.unique(train_labels)
+
+    for l in unique_labels:
+        train_class_count.append(len(
+            train_labels[train_labels == l]))
+        #test_class_count.append(len(
+            #labels[labels == l]))
         #############
-        train_shot_dict = {}
-        for i in range(len(train_class_count)):
-            if train_class_count[i] > 100:
-                key = 0
-                #train_shot_dict[i] = 0
-            elif train_class_count[i] < 20:
-                key = 2
-            else:
-                key = 1
-            ##########################
-            per_shot_count[key] = per_shot_count.get(key, 0) + test_class_count[i]
-            train_shot_dict[i] = key
+    train_shot_dict = {}
+    for i in range(len(train_class_count)):
+        if train_class_count[i] > 100:
+            key = 0
+            #train_shot_dict[i] = 0
+        elif train_class_count[i] < 20:
+            key = 2
+        else:
+            key = 1
+        ##########################
+        #per_shot_count[key] = per_shot_count.get(key, 0) + test_class_count[i]
+        age = unique_labels[i]
+        train_shot_dict[age] = key
         ######################
-        print(per_shot_count)
-        print(f' many is {per_shot_count[0]} med is {per_shot_count[1]} few is {per_shot_count[2]}')
+    #print(per_shot_count)
+    #print(f' many is {per_shot_count[0]} med is {per_shot_count[1]} few is {per_shot_count[2]}')
         #assert 1 == 2
         #
-        return train_shot_dict
+    return train_shot_dict
 
-       
+def get_shots_in_order(train_labels):
+    train_class_count, test_class_count, per_shot_count = [], [],  {}
+    #print(f'the len of the unique is {len(np.unique(train_labels))}')
+    #labels = df['age']
+    unique_labels = np.unique(train_labels)
 
-
+    train_shot_dict = {}
+    for i in range(len(unique_labels)):
+        # 60岁之上：2， 20岁之下：0， 中间：1
+        if unique_labels[i] < 20:
+            key = 0
+            #train_shot_dict[i] = 0
+        elif unique_labels[i] < 60:
+            key = 1
+        else:
+            key = 2
+        ##########################
+        #per_shot_count[key] = per_shot_count.get(key, 0) + test_class_count[i]
+        age = unique_labels[i]
+        train_shot_dict[age] = key
+        ######################
+    #print(per_shot_count)
+    #print(f' many is {per_shot_count[0]} med is {per_shot_count[1]} few is {per_shot_count[2]}')
+        #assert 1 == 2
+        #
+    return train_shot_dict
 
 class GaussianBlur(object):
     """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709"""

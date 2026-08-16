@@ -7,10 +7,9 @@ import torch.nn.functional as F
 
 
 class ResNet_cross_entropy(nn.Module):
-    def __init__(self, args=None):
+    def __init__(self, args):
         super().__init__()
         self.args = args
-        self.groups = args.groups
         backbone = getattr(torchvision.models, f"resnet{args.model_depth}")(weights=None)
         #
         fc_inputs = backbone.fc.in_features
@@ -21,7 +20,7 @@ class ResNet_cross_entropy(nn.Module):
         #
         self.model_linear =  nn.Sequential(nn.Linear(fc_inputs, 1))
         #
-        self.model_classifier = nn.Sequential(nn.Linear(fc_inputs, self.groups))
+        self.model_classifier = nn.Sequential(nn.Linear(fc_inputs, args.age_groups))
 
         
     # g is the same shape of y
