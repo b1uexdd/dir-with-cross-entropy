@@ -7,6 +7,7 @@ import torch.nn as nn
 from utils import setup_seed
 from network import ResNet_cross_entropy
 from tqdm import tqdm
+import os
 
 parser = argparse.ArgumentParser()
 
@@ -36,9 +37,10 @@ parser.add_argument('--optimizer', type=str, default='adam',
                     choices=['adam', 'sgd'], help='optimizer type')
 parser.add_argument('--group_method', type=str, default='in_order',
                     choices=['in_order', 'by_count'])
-parser.add_argument('--lr', type=float, default=5e-5,
+parser.add_argument('--lr', type=float, default=1e-4,
                     help='initial learning rate')
-parser.add_argument('--epoch', type=int, default=60,)
+parser.add_argument("--weight_decay", type=float, default=1e-5)
+parser.add_argument('--epoch', type=int, default=90)
 parser.add_argument('--ce_weight', type=float, default=1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -96,21 +98,20 @@ def evaluate_point_mae(model, val_loader):
     val_mae = absolute_error_sum / sample_count
     return val_mae
 
-def train(args, model, train_loader,val_loader):
+def train(args, model, train_loader, val_loader, log_file):
     model = model.to(device)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     mse_criterion = nn.MSELoss()
     ce_criterion = nn.CrossEntropyLoss()
     best_val_mae = float("inf")
 
     for epoch in tqdm(range(args.epoch), desc="Training"):
+        model.train()
         epoch_mse_loss = 0.0
         epoch_ce_loss = 0.0
         epoch_total_loss = 0.0
 
         for idx, (x, y, w, age_class) in enumerate(train_loader):
-            model.train()
             x, y, w, age_class= x.to(device), y.to(device), w.to(device), age_class.to(device)
 
             y_hat, z, logits = model(x)
@@ -129,31 +130,28 @@ def train(args, model, train_loader,val_loader):
             
         num_per_batch = len(train_loader)
 
-        print(
-            f"Epoch [{epoch + 1}/{args.epoch}] "
-            f"MSE Loss: {epoch_mse_loss / num_per_batch:.6f}, "
-            f"Cross Entropy Loss: {epoch_ce_loss / num_per_batch:.6f}, "
-            f"Total Loss: {epoch_total_loss / num_per_batch:.6f}"
-        )
-
         current_val_mae = evaluate_point_mae(model, val_loader)
         if current_val_mae < best_val_mae:
             best_val_mae = current_val_mae
-            torch.save(model.state_dict(),"best_model.pth")
-        print(
-            f"Epoch [{epoch + 1}/{args.epoch}] "
-            f"MSE: {epoch_mse_loss / num_per_batch:.6f}, "
-            f"CE: {epoch_ce_loss / num_per_batch:.6f}, "
-            f"Total: {epoch_total_loss / num_per_batch:.6f}, "
-            f"Val MAE: {current_val_mae:.4f}, "
-            f"Best Val MAE: {best_val_mae:.4f}"
+            torch.save(model.state_dict(),f"best_model_{args.group_method}.pth")
+
+        message = (
+        f"Epoch [{epoch + 1}/{args.epoch}] "
+        f"MSE: {epoch_mse_loss / num_per_batch:.6f}, "
+        f"CE: {epoch_ce_loss / num_per_batch:.6f}, "
+        f"Total: {epoch_total_loss / num_per_batch:.6f}, "
+        f"Val MAE: {current_val_mae:.4f}, "
+        f"Best Val MAE: {best_val_mae:.4f}"
         )
 
+        print(message)
+        print(message, file=log_file, flush=True)
     return model
 
 @torch.no_grad()
-def test(model, test_loader):
-    state_dict = torch.load('best_model.pth', map_location=device)
+def test(model, test_loader, args):
+    model_path = f'best_model_{args.group_method}.pth'
+    state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
@@ -179,15 +177,38 @@ def test(model, test_loader):
 def main():
     args = parser.parse_args()
     setup_seed(args.seed)
+    os.makedirs("logs", exist_ok=True)
+    log_path = (
+        f"logs/"
+        f"{args.group_method}_"
+        f"ce{args.ce_weight}_"
+        f"wd{args.weight_decay}_"
+        f"seed{args.seed}.txt"
+    )
 
     train_loader, val_loader, test_loader, train_labels = get_data_loader(args)
 
     model = ResNet_cross_entropy(args)
 
-    model = train(args, model, train_loader, val_loader)
+    with open(log_path, mode="w", encoding="utf-8", buffering=1) as log_file:
+        print(f"Group method: {args.group_method}", file=log_file)
+        print(f"CE weight: {args.ce_weight}", file=log_file)
+        print(f"Learning rate: {args.lr}", file=log_file)
+        print(f"Batch size: {args.batch_size}", file=log_file)
+        print(f"Epochs: {args.epoch}", file=log_file)
+        print(f"Seed: {args.seed}", file=log_file)
+        print("-" * 80, file=log_file, flush=True)
 
-    test_mae = test(model, test_loader)
-    print(f'Test mae of method {args.group_method} is: {test_mae}')
+        model = train(args, model, train_loader, val_loader, log_file)
+
+        test_mae = test(model, test_loader, args)
+        test_message = (
+            f"Test MAE of method {args.group_method}: "
+            f"{test_mae:.4f}"
+            )
+
+        print(test_message)
+        print(test_message, file=log_file, flush=True)
 
 if __name__ == '__main__':
     main()
