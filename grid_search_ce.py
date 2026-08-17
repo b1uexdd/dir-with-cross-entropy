@@ -106,6 +106,7 @@ def train(args, model, train_loader, val_loader, log_file):
     reg_criterion = nn.L1Loss()
     ce_criterion = nn.CrossEntropyLoss()
     best_val_mae = float("inf")
+    model_path = (f"best_model_{args.group_method}_ce{args.ce_weight}.pth")
 
     for epoch in tqdm(range(args.epoch), desc="Training"):
         model.train()
@@ -135,7 +136,7 @@ def train(args, model, train_loader, val_loader, log_file):
         current_val_mae = evaluate_point_mae(model, val_loader)
         if current_val_mae < best_val_mae:
             best_val_mae = current_val_mae
-            torch.save(model.state_dict(),f"best_model_{args.group_method}.pth")
+            torch.save(model.state_dict(), model_path)
 
         scheduler.step()
         current_lr = scheduler.get_last_lr()
@@ -153,7 +154,7 @@ def train(args, model, train_loader, val_loader, log_file):
         print(message)
         print(message, file=log_file, flush=True)
                 
-    return model
+    return model, best_val_mae
 
 @torch.no_grad()
 def test(model, test_loader, args):
@@ -183,39 +184,70 @@ def test(model, test_loader, args):
 
 def main():
     args = parser.parse_args()
-    setup_seed(args.seed)
+
     os.makedirs("logs", exist_ok=True)
-    log_path = (
-        f"logs/"
-        f"{args.group_method}_"
-        f"ce{args.ce_weight}_"
-        f"wd{args.weight_decay}_"
-        f"seed{args.seed}.txt"
-    )
+
+    ce_weight_list = [0, 0.5, 1.0, 1.5, 2.0]
+    best_ce_weight = None
+    best_val_mae = float("inf")
+
+    results = []
 
     train_loader, val_loader, test_loader, train_labels = get_data_loader(args)
 
-    model = ResNet_cross_entropy(args)
+    for ce_weight in ce_weight_list:
+        args.ce_weight = ce_weight
+        setup_seed(args.seed)
+        model = ResNet_cross_entropy(args)
+        log_path = (
+                f"logs/"
+                f"{args.group_method}_"
+                f"ce{args.ce_weight}_"
+                f"wd{args.weight_decay}_"
+                f"seed{args.seed}.txt"
+            )
+        
+        with open(log_path, mode="w", encoding="utf-8", buffering=1) as log_file:
+            print(f"Group method: {args.group_method}", file=log_file)
+            print(f"CE weight: {args.ce_weight}", file=log_file)
+            print(f"Batch size: {args.batch_size}", file=log_file)
+            print(f"Epochs: {args.epoch}", file=log_file)
+            print(f"Seed: {args.seed}", file=log_file)
+            print("-" * 80, file=log_file, flush=True)
 
+        model, val_mae = train(args, model, train_loader, val_loader, log_file)
+
+        results.append({
+            "ce_weight": ce_weight,
+            "val_mae": val_mae
+        })
+
+        if val_mae < best_val_mae:
+            best_val_mae = val_mae
+            best_ce_weight = ce_weight
+            
     with open(log_path, mode="w", encoding="utf-8", buffering=1) as log_file:
-        print(f"Group method: {args.group_method}", file=log_file)
-        print(f"CE weight: {args.ce_weight}", file=log_file)
-        print(f"Learning rate: {args.lr}", file=log_file)
-        print(f"Batch size: {args.batch_size}", file=log_file)
-        print(f"Epochs: {args.epoch}", file=log_file)
-        print(f"Seed: {args.seed}", file=log_file)
-        print("-" * 80, file=log_file, flush=True)
+        for result in results:
+            print(result)
 
-        model = train(args, model, train_loader, val_loader, log_file)
+    print(
+        f"\nBest ce_weight = "
+        f"{best_ce_weight}"
+    )
 
-        test_mae = test(model, test_loader, args)
-        test_message = (
+    print(
+        f"Best Val MAE = "
+        f"{best_val_mae:.4f}"
+    )
+
+    test_mae = test(model, test_loader, args)
+    test_message = (
             f"Test MAE of method {args.group_method}: "
             f"{test_mae:.4f}"
             )
 
-        print(test_message)
-        print(test_message, file=log_file, flush=True)
+    print(test_message)
+    print(test_message, file=log_file, flush=True)
 
 if __name__ == '__main__':
     main()
