@@ -24,7 +24,7 @@ parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--img_size', type=int, default=224,
                     help='image size used in training')
 parser.add_argument('--groups', type=int, default=10,
-                    help='number of split bins to the wole datasets')
+                    help='number of split bins to the awole datasets')
 parser.add_argument('--workers', type=int, default=32,
                     help='number of workers used in data loading')
 parser.add_argument('--reweight', type=str, default='inv',  choices=['inv', 'sqrt_inv'],
@@ -35,13 +35,13 @@ parser.add_argument('--smooth', default='none', choices=['lds', 'none'], help='u
 parser.add_argument('--gpu', type=int, default=None)
 parser.add_argument('--optimizer', type=str, default='adam',
                     choices=['adam', 'sgd'], help='optimizer type')
-parser.add_argument('--group_method', type=str, default='by_count',
+parser.add_argument('--group_method', type=str, default='in_order',
                     choices=['in_order', 'by_count'])
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='initial learning rate')
-parser.add_argument("--weight_decay", type=float, default=1e-4)
+parser.add_argument("--weight_decay", type=float, default=0)
 parser.add_argument('--epoch', type=int, default=90)
-parser.add_argument('--ce_weight', type=float, default=1)
+parser.add_argument('--ce_weight', type=float, default=1.5)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -100,7 +100,7 @@ def evaluate_point_mae(model, val_loader):
 
 def train(args, model, train_loader, val_loader, log_file):
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,milestones=[60, 80],gamma=0.1)
 
     reg_criterion = nn.L1Loss()
@@ -138,7 +138,7 @@ def train(args, model, train_loader, val_loader, log_file):
             torch.save(model.state_dict(),f"best_model_{args.group_method}.pth")
 
         scheduler.step()
-        current_lr = scheduler.get_last_lr()
+        current_lr = scheduler.get_last_lr()[0]
 
         message = (
         f"Epoch [{epoch + 1}/{args.epoch}] "
@@ -219,4 +219,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
