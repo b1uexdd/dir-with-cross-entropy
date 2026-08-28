@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 
 #model_parameter
 parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--age_groups', type=int, default=3)
+parser.add_argument('--age_groups', type=int, default=100)
 parser.add_argument('--model_depth', type=str, default='50', help='model name')
 #data_parameter
 parser.add_argument('--dataset', type=str, default='agedb',
@@ -41,7 +41,7 @@ parser.add_argument('--lr', type=float, default=1e-3,
                     help='initial learning rate')
 parser.add_argument("--weight_decay", type=float, default=0)
 parser.add_argument('--epoch', type=int, default=90)
-parser.add_argument('--ce_weight', type=float, default=1.5)
+parser.add_argument('--ce_weight', type=float, default=1)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -52,7 +52,8 @@ def get_data_loader(args):
                                 'train'], df[df['split'] == 'val'], df[df['split'] == 'test']
     train_labels = df_train['age']
     if args.group_method == 'in_order':
-        train_shot_dict = get_shots_in_order(train_labels, num_class=args.age_groups)
+        train_shot_dict, min_label, max_label = get_shots_in_order(train_labels, num_class=args.age_groups)
+        print(min_label, max_label) 
     elif args.group_method == 'by_count':
         train_shot_dict = get_shots_by_count(train_labels)
     #
@@ -189,7 +190,7 @@ def main():
         f"logs/"
         f"{args.group_method}_"
         f"ce{args.ce_weight}_"
-        f"wd{args.weight_decay}_"
+        f"cls{args.age_groups}_"
         f"seed{args.seed}.txt"
     )
 

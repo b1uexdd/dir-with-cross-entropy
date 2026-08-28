@@ -209,7 +209,7 @@ def get_shots_in_order(train_labels, num_class):
     unique_labels = np.unique(train_labels)
 
     min_label = 0
-    max_label = 100
+    max_label = unique_labels[-1]
 
     class_width = (max_label - min_label) / num_class
 
@@ -222,7 +222,7 @@ def get_shots_in_order(train_labels, num_class):
 
         train_shot_dict[age] = key
 
-    return train_shot_dict
+    return train_shot_dict, min_label, max_label
 
 class GaussianBlur(object):
     """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709"""
