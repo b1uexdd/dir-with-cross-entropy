@@ -205,31 +205,23 @@ def get_shots_by_count(train_labels):
         #
     return train_shot_dict
 
-def get_shots_in_order(train_labels):
-    train_class_count, test_class_count, per_shot_count = [], [],  {}
-    #print(f'the len of the unique is {len(np.unique(train_labels))}')
-    #labels = df['age']
+def get_shots_in_order(train_labels, num_class):
     unique_labels = np.unique(train_labels)
 
+    min_label = 0
+    max_label = 100
+
+    class_width = (max_label - min_label) / num_class
+
     train_shot_dict = {}
-    for i in range(len(unique_labels)):
-        # 60岁之上：2， 20岁之下：0， 中间：1
-        if unique_labels[i] < 20:
-            key = 0
-            #train_shot_dict[i] = 0
-        elif unique_labels[i] < 60:
-            key = 1
-        else:
-            key = 2
-        ##########################
-        #per_shot_count[key] = per_shot_count.get(key, 0) + test_class_count[i]
-        age = unique_labels[i]
+
+    for age in unique_labels:
+        key = int((age - min_label) / class_width)
+
+        key = min(key, num_class - 1)
+
         train_shot_dict[age] = key
-        ######################
-    #print(per_shot_count)
-    #print(f' many is {per_shot_count[0]} med is {per_shot_count[1]} few is {per_shot_count[2]}')
-        #assert 1 == 2
-        #
+
     return train_shot_dict
 
 class GaussianBlur(object):
