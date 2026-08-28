@@ -52,7 +52,7 @@ def get_data_loader(args):
                                 'train'], df[df['split'] == 'val'], df[df['split'] == 'test']
     train_labels = df_train['age']
     if args.group_method == 'in_order':
-        train_shot_dict = get_shots_in_order(train_labels)
+        train_shot_dict = get_shots_in_order(train_labels, num_class=args.age_groups)
     elif args.group_method == 'by_count':
         train_shot_dict = get_shots_by_count(train_labels)
     #
