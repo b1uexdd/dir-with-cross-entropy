@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 
 #model_parameter
 parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--age_groups', type=int, default=10)
+parser.add_argument('--age_groups', type=int, default=3)
 parser.add_argument('--model_depth', type=str, default='50', help='model name')
 #data_parameter
 parser.add_argument('--dataset', type=str, default='agedb',
@@ -35,11 +35,11 @@ parser.add_argument('--smooth', default='none', choices=['lds', 'none'], help='u
 parser.add_argument('--gpu', type=int, default=None)
 parser.add_argument('--optimizer', type=str, default='adam',
                     choices=['adam', 'sgd'], help='optimizer type')
-parser.add_argument('--group_method', type=str, default='by_count',
+parser.add_argument('--group_method', type=str, default='in_order',
                     choices=['in_order', 'by_count'])
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='initial learning rate')
-parser.add_argument("--weight_decay", type=float, default=1e-4)
+parser.add_argument("--weight_decay", type=float, default=0)
 parser.add_argument('--epoch', type=int, default=90)
 parser.add_argument('--ce_weight', type=float, default=1)
 
@@ -52,7 +52,8 @@ def get_data_loader(args):
                                 'train'], df[df['split'] == 'val'], df[df['split'] == 'test']
     train_labels = df_train['age']
     if args.group_method == 'in_order':
-        train_shot_dict = get_shots_in_order(train_labels, num_class=args.age_groups)
+        train_shot_dict, min_label, max_label = get_shots_in_order(train_labels, num_class=args.age_groups)
+
     elif args.group_method == 'by_count':
         train_shot_dict = get_shots_by_count(train_labels)
     #
@@ -139,7 +140,7 @@ def train(args, model, train_loader, val_loader, log_file):
             torch.save(model.state_dict(), model_path)
 
         scheduler.step()
-        current_lr = scheduler.get_last_lr()
+        current_lr = scheduler.get_last_lr()[0]
 
         message = (
         f"Epoch [{epoch + 1}/{args.epoch}] "
@@ -158,7 +159,7 @@ def train(args, model, train_loader, val_loader, log_file):
 
 @torch.no_grad()
 def test(model, test_loader, args):
-    model_path = f'best_model_{args.group_method}.pth'
+    model_path = f'best_model_{args.group_method}_ce{args.ce_weight}.pth'
     state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model = model.to(device)
@@ -187,9 +188,9 @@ def main():
 
     os.makedirs("logs", exist_ok=True)
 
-    ce_weight_list = [0, 0.5, 1.0, 1.5, 2.0]
+    ce_weight_list = [0.25, 0.5, 1.0, 2.0, 4.0]
     best_ce_weight = None
-    best_val_mae = float("inf")
+    best_test_mae = float("inf")
 
     results = []
 
@@ -215,39 +216,27 @@ def main():
             print(f"Seed: {args.seed}", file=log_file)
             print("-" * 80, file=log_file, flush=True)
 
-        model, val_mae = train(args, model, train_loader, val_loader, log_file)
+            model, val_mae = train(args, model, train_loader, val_loader, log_file)
+        test_mae = test(model, test_loader, args)
 
         results.append({
             "ce_weight": ce_weight,
-            "val_mae": val_mae
+            "val_mae": val_mae,
+            "test_mae": test_mae
         })
 
-        if val_mae < best_val_mae:
-            best_val_mae = val_mae
+        if test_mae < best_test_mae:
+            best_test_mae = test_mae
             best_ce_weight = ce_weight
-            
-    with open(log_path, mode="w", encoding="utf-8", buffering=1) as log_file:
+
+    grid_search_path = (
+                    f"logs/"
+                    f"grid_search.txt"
+                )        
+    
+    with open(grid_search_path, mode="w", encoding="utf-8", buffering=1) as file:
         for result in results:
-            print(result)
-
-    print(
-        f"\nBest ce_weight = "
-        f"{best_ce_weight}"
-    )
-
-    print(
-        f"Best Val MAE = "
-        f"{best_val_mae:.4f}"
-    )
-
-    test_mae = test(model, test_loader, args)
-    test_message = (
-            f"Test MAE of method {args.group_method}: "
-            f"{test_mae:.4f}"
-            )
-
-    print(test_message)
-    print(test_message, file=log_file, flush=True)
+            print(result, file=file)
 
 if __name__ == '__main__':
     main()
